@@ -1,0 +1,6 @@
+Upload the contents of this folder to your GitHub repository.
+Keep the public folder exactly as it is. It contains index.html, style.css, app.js and privacy.html.
+Set ADMIN_USERNAME, ADMIN_PASSWORD and a random JWT_SECRET (at least 32 characters) in your hosting provider's Environment settings.
+Do not upload a real .env file or put secrets in frontend files.
+Use Node.js 18+; Build command: npm install; Start command: npm start.
+Use a persistent disk and set DATA_DIR to its mount path so SQLite data survives redeploys.

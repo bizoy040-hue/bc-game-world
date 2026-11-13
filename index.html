@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BC GAME WORLD – Become an Agent</title>
+<meta name="description" content="Apply to become a mobile agent and help customers with deposits and withdrawals.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="/">BC GAME <span>WORLD</span></a>
+  <button class="btn btn-ghost" id="authBtn" type="button">Login</button>
+</header>
+
+<main id="landing">
+  <section class="hero">
+    <h1>Become a BC Game Agent &amp; Earn Money!</h1>
+    <p>The BC Game Agent Program is a great opportunity to become a mobile agent.</p>
+    <p>You can help customers deposit funds and withdraw money from their accounts and earn up to 8% commission from BC Game for doing so.</p>
+    <p>Join our agent network and start your earning journey today!</p>
+    <a class="btn btn-main" href="#register" id="ctaBtn">BECOME BC GAME AGENT</a>
+    <p class="note">Commission figures are program claims and are subject to official BC.Game terms and eligibility.</p>
+  </section>
+
+  <section class="card" id="register">
+    <h2>Agent Registration Form</h2>
+    <form id="form" novalidate>
+      <label>Full Name<input name="name" autocomplete="name" maxlength="100"><small class="err"></small></label>
+      <label>Email Address<input name="email" type="email" autocomplete="email" maxlength="150"><small class="err"></small></label>
+      <label>Country<select name="country" id="country"></select><small class="err"></small></label>
+      <label>Phone Number
+        <div class="row"><select id="dial" aria-label="Country code"></select><input name="phone" type="tel" inputmode="tel" autocomplete="tel-national" maxlength="20"></div>
+        <small class="err"></small></label>
+      <label>Telegram Username<input name="telegram" placeholder="@username" maxlength="33"><small class="err"></small></label>
+      <label>WhatsApp Number<input name="whatsapp" type="tel" inputmode="tel" placeholder="+1 555 123 4567" maxlength="20"><small class="err"></small></label>
+      <label class="check"><input type="checkbox" name="consent"><span>I agree to the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and consent to the processing of my submitted information.</span></label>
+      <small class="err" id="consentErr"></small>
+      <div id="msg" role="status" hidden></div>
+      <button class="btn btn-main" id="submit" type="submit"><span class="spin" hidden></span><span class="lbl">SUBMIT APPLICATION</span></button>
+    </form>
+  </section>
+</main>
+
+<main id="admin" hidden>
+  <div class="stats">
+    <div class="stat"><b id="sTotal">0</b><span>Total Applications</span></div>
+    <div class="stat"><b id="sToday">0</b><span>Today's Applications</span></div>
+  </div>
+  <div class="tools">
+    <input id="q" type="search" placeholder="Search name, email, phone…">
+    <select id="fCountry"><option value="">All countries</option></select>
+    <button class="btn btn-ghost" id="exportBtn" type="button">Export CSV</button>
+  </div>
+  <div class="wrap"><table>
+    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Country</th><th>Phone</th><th>Telegram</th><th>WhatsApp</th><th>Date</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <p id="empty" class="note" hidden>No applications found.</p>
+</main>
+
+<footer>© BC GAME WORLD · An independent agent-recruitment site. Not operated by, or affiliated with, BC.Game unless stated otherwise. · <a href="/privacy">Privacy Policy</a></footer>
+
+<dialog id="loginDlg"><form id="loginForm" method="dialog">
+  <h3>Admin Login</h3>
+  <label>Username<input name="username" autocomplete="username" required></label>
+  <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+  <small class="err" id="loginErr"></small>
+  <div class="row"><button class="btn btn-ghost" type="button" id="loginCancel">Cancel</button><button class="btn btn-main" type="submit">Login</button></div>
+</form></dialog>
+
+<dialog id="viewDlg"><div id="viewBody"></div><div class="row"><button class="btn btn-ghost" id="viewClose" type="button">Close</button></div></dialog>
+
+<script src="/app.js"></script>
+</body>
+</html>
