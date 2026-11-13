@@ -82,7 +82,9 @@ async function initDb() {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
       submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       reviewed_at TIMESTAMPTZ
-    );`);
+    );
+    ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS reference_name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS payment_numbers JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(
     `INSERT INTO admins (username, password_hash) VALUES ($1, $2)
      ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
@@ -193,11 +195,12 @@ const rnd = (n, a = ALPHA) => Array.from({ length: n }, () => a[crypto.randomInt
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 const CRYPTO = ['USDT TRC20', 'USDT ERC20', 'USDT BEP20', 'Other Cryptocurrency'];
 const PAYMENTS = {
-  Bangladesh: ['bKash', 'Nagad', 'Rocket', 'Bank Transfer', ...CRYPTO],
+  Bangladesh: ['bKash', 'Nagad', 'Rocket', 'Upay', 'Bank Transfer', ...CRYPTO],
   India: ['UPI', 'Paytm', 'Bank Transfer', ...CRYPTO],
   Pakistan: ['JazzCash', 'Easypaisa', 'Bank Transfer', ...CRYPTO],
   default: ['Bank Transfer', ...CRYPTO]
 };
+const WALLETS = ['bKash', 'Nagad', 'Rocket', 'Upay', 'UPI', 'Paytm', 'JazzCash', 'Easypaisa']; // methods that take contact numbers
 const userLoginLimit = limiter(15, 10, 'Too many login attempts. Please try again in 15 minutes.');
 const idParam = req => parseInt(req.params.id, 10);
 
@@ -225,10 +228,10 @@ app.post('/api/user/login', userLoginLimit, ah(async (req, res) => {
 app.post('/api/user/logout', (req, res) => { res.clearCookie('utoken', cookieOpts); res.json({ ok: true }); });
 
 const FORM_SQL = `SELECT full_name AS "fullName", dob, country, city, address, mobile, whatsapp, telegram, email,
-  payment_method AS payment, reference_info AS reference, status FROM onboarding_forms WHERE user_ref = $1`;
+  payment_method AS payment, reference_info AS reference, reference_name AS "referenceName", payment_numbers AS "paymentNumbers", status FROM onboarding_forms WHERE user_ref = $1`;
 app.get('/api/user/me', userAuth, ah(async (req, res) => {
   const f = await pool.query(FORM_SQL, [req.user.id]);
-  res.json({ userId: req.user.user_id, name: req.user.name, form: f.rows[0] || null, payments: PAYMENTS });
+  res.json({ userId: req.user.user_id, name: req.user.name, form: f.rows[0] || null, payments: PAYMENTS, walletMethods: WALLETS });
 }));
 
 app.put('/api/user/form', userAuth, ah(async (req, res) => {
@@ -239,6 +242,7 @@ app.put('/api/user/form', userAuth, ah(async (req, res) => {
     telegram: clean(b.telegram, 40).replace(/^@/, ''), email: clean(b.email, 150).toLowerCase(), payment: clean(b.payment, 40),
     reference: String(b.reference ?? '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim().slice(0, 500)
   };
+  f.referenceName = clean(b.referenceName, 100);
   const errors = {};
   if (f.fullName.length < 2) errors.fullName = 'Enter your full name.';
   const okDob = /^\d{4}-\d{2}-\d{2}$/.test(f.dob) && !isNaN(new Date(f.dob)) && new Date(f.dob).toISOString().slice(0, 10) === f.dob && f.dob >= '1900-01-01';
@@ -251,17 +255,25 @@ app.put('/api/user/form', userAuth, ah(async (req, res) => {
   if (!/^[A-Za-z0-9_]{5,32}$/.test(f.telegram)) errors.telegram = 'Telegram username must be 5–32 letters, numbers or underscores.';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email)) errors.email = 'Enter a valid email address.';
   if (!(Object.hasOwn(PAYMENTS, f.country) ? PAYMENTS[f.country] : PAYMENTS.default).includes(f.payment)) errors.payment = 'Select a payment method from the list.';
+  let nums = [];
+  if (WALLETS.includes(f.payment)) {
+    const seen = new Set(), raw = Array.isArray(b.paymentNumbers) ? b.paymentNumbers.slice(0, 10) : [];
+    nums = raw.map(n => clean(n, 30)).filter(n => n && !seen.has(digits(n)) && seen.add(digits(n)));
+    if (!nums.length) errors.paymentNumbers = `Add at least one ${f.payment} number.`;
+    else if (nums.length > 5) errors.paymentNumbers = 'You can add up to 5 numbers.';
+    else if (nums.some(n => !/^\+?[\d\s\-()]+$/.test(n) || digits(n).length < 7 || digits(n).length > 15)) errors.paymentNumbers = 'Enter valid numbers with country code.';
+  }
   if (b.consent !== true) errors.consent = 'You must confirm the information and accept the Privacy Policy.';
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Please fix the highlighted fields.', errors });
   const cur = await pool.query('SELECT status FROM onboarding_forms WHERE user_ref = $1', [req.user.id]);
   if (cur.rows[0]?.status === 'approved') return res.status(403).json({ error: 'Your application is approved and can no longer be edited.' });
   await pool.query(
-    `INSERT INTO onboarding_forms (user_ref, full_name, dob, country, city, address, mobile, whatsapp, telegram, email, payment_method, reference_info)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    `INSERT INTO onboarding_forms (user_ref, full_name, dob, country, city, address, mobile, whatsapp, telegram, email, payment_method, reference_info, reference_name, payment_numbers)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
      ON CONFLICT (user_ref) DO UPDATE SET full_name=EXCLUDED.full_name, dob=EXCLUDED.dob, country=EXCLUDED.country, city=EXCLUDED.city,
        address=EXCLUDED.address, mobile=EXCLUDED.mobile, whatsapp=EXCLUDED.whatsapp, telegram=EXCLUDED.telegram, email=EXCLUDED.email,
-       payment_method=EXCLUDED.payment_method, reference_info=EXCLUDED.reference_info, status='pending', reviewed_at=NULL, submitted_at=NOW()`,
-    [req.user.id, f.fullName, f.dob, f.country, f.city, f.address, f.mobile, f.whatsapp, f.telegram, f.email, f.payment, f.reference]);
+       payment_method=EXCLUDED.payment_method, reference_info=EXCLUDED.reference_info, reference_name=EXCLUDED.reference_name, payment_numbers=EXCLUDED.payment_numbers, status='pending', reviewed_at=NULL, submitted_at=NOW()`,
+    [req.user.id, f.fullName, f.dob, f.country, f.city, f.address, f.mobile, f.whatsapp, f.telegram, f.email, f.payment, f.reference, f.referenceName, JSON.stringify(nums.map(number => ({ method: f.payment, number })))]);
   res.json({ ok: true, status: 'pending' });
 }));
 
