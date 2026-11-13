@@ -3,16 +3,30 @@ const express = require('express'), helmet = require('helmet'), rateLimit = requ
 const cookieParser = require('cookie-parser'), bcrypt = require('bcryptjs'), jwt = require('jsonwebtoken');
 const { Pool } = require('pg'), path = require('path');
 
-const { ADMIN_USERNAME, ADMIN_PASSWORD, JWT_SECRET } = process.env;
-const PORT = process.env.PORT || 3000, PROD = process.env.NODE_ENV === 'production';
 const fail = m => { console.error('CONFIG ERROR: ' + m); process.exit(1); };
 
+// Read an environment variable tolerantly: exact name first, then a name that differs only by
+// stray spaces / case / punctuation (e.g. "JWT_SECRET " or "jwt-secret"). Values are trimmed and unquoted.
+const norm = k => k.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+const getEnv = name => {
+  let v = process.env[name];
+  if (v === undefined) { const k = Object.keys(process.env).find(x => norm(x) === norm(name)); if (k) v = process.env[k]; }
+  return v === undefined ? '' : String(v).trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+};
+
+const ADMIN_USERNAME = getEnv('ADMIN_USERNAME'), ADMIN_PASSWORD = getEnv('ADMIN_PASSWORD'), JWT_SECRET = getEnv('JWT_SECRET');
+const PORT = process.env.PORT || 3000, PROD = getEnv('NODE_ENV') === 'production';
+
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) fail('ADMIN_USERNAME and ADMIN_PASSWORD must be set.');
-if (!JWT_SECRET || JWT_SECRET.length < 32) fail('JWT_SECRET must be set (32+ characters).');
+if (JWT_SECRET.length < 32) {
+  const seen = Object.keys(process.env).filter(k => /JWT|SECRET|TOKEN/i.test(k)).map(k => `${JSON.stringify(k)} (length ${String(process.env[k]).length})`);
+  console.error('Detected related variables:', seen.length ? seen.join(', ') : 'none');
+  fail(`JWT_SECRET must be set (32+ characters). Found length: ${JWT_SECRET.length}.`);
+}
 
 // ---------- Database (Neon PostgreSQL) ----------
 function databaseUrl() {
-  let u = (process.env.DATABASE_URL || '').trim()
+  let u = getEnv('DATABASE_URL')
     .replace(/^DATABASE_URL\s*=\s*/i, '').replace(/^psql\s+/i, '').replace(/^['"]+|['"]+$/g, '').trim();
   if (!u) fail('DATABASE_URL is not set. Paste the full Neon connection string into the Render environment variable DATABASE_URL.');
   let p;
