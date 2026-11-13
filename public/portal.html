@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Applicant Login – BC GAME WORLD</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="/">BC GAME <span>WORLD</span></a>
+  <button class="btn btn-ghost" id="outBtn" type="button" hidden>Logout</button>
+</header>
+<main>
+  <section class="card" id="loginCard">
+    <h2>Applicant Login</h2>
+    <form id="lf" novalidate>
+      <label>User ID<input name="uid" autocomplete="username" autocapitalize="characters" spellcheck="false" maxlength="30"></label>
+      <label>Password<input name="pw" type="password" autocomplete="current-password" maxlength="100"></label>
+      <div id="lmsg" class="msg" hidden role="alert"></div>
+      <button class="btn btn-main" id="lbtn" type="submit" style="width:100%">LOGIN</button>
+    </form>
+  </section>
+
+  <section class="card wide" id="formCard" hidden>
+    <div class="who"><h2>Your Information</h2><span id="stBadge" class="badge pending"></span></div>
+    <p class="note" id="whoLine"></p>
+    <div id="stNote" class="msg info" hidden></div>
+    <form id="pf" novalidate>
+      <label>Full Name<input name="fullName" autocomplete="name" maxlength="100"><small class="err"></small></label>
+      <label>Date of Birth<input name="dob" type="date"><small class="err"></small></label>
+      <label>Country<select name="country" id="country"></select><small class="err"></small></label>
+      <label>City<input name="city" autocomplete="address-level2" maxlength="80"><small class="err"></small></label>
+      <label>Address<input name="address" autocomplete="street-address" maxlength="250"><small class="err"></small></label>
+      <label>Mobile Number<input name="mobile" type="tel" inputmode="tel" placeholder="+880 1XXX XXXXXX" maxlength="30"><small class="err"></small></label>
+      <label>WhatsApp<input name="whatsapp" type="tel" inputmode="tel" placeholder="+880 1XXX XXXXXX" maxlength="30"><small class="err"></small></label>
+      <label>Telegram Username<input name="telegram" placeholder="@username" maxlength="33"><small class="err"></small></label>
+      <label>Email<input name="email" type="email" autocomplete="email" maxlength="150"><small class="err"></small></label>
+      <label>Preferred Payment Method<select name="payment" id="payment"></select><small class="err"></small></label>
+      <label>Reference Information (optional)<textarea name="reference" rows="3" maxlength="500"></textarea><small class="err"></small></label>
+      <label class="check"><input type="checkbox" name="consent"><span>I confirm this information is accurate and agree to the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
+      <small class="err" id="consentErr"></small>
+      <div id="pmsg" class="msg" hidden role="status"></div>
+      <button class="btn btn-main" id="pbtn" type="submit" style="width:100%">SUBMIT INFORMATION</button>
+    </form>
+  </section>
+</main>
+<footer>© BC GAME WORLD · <a href="/privacy">Privacy Policy</a></footer>
+<script src="/portal.js"></script>
+</body>
+</html>
