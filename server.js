@@ -1,7 +1,9 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express'), helmet = require('helmet'), rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser'), bcrypt = require('bcryptjs'), jwt = require('jsonwebtoken');
 const { Pool } = require('pg'), path = require('path');
+require('pg').types.setTypeParser(1082, v => v); // keep DATE columns as plain YYYY-MM-DD strings
 
 const fail = m => { console.error('CONFIG ERROR: ' + m); process.exit(1); };
 
@@ -60,6 +62,26 @@ async function initDb() {
       telegram TEXT NOT NULL,
       whatsapp TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS applicant_users (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      application_id INTEGER REFERENCES applications(id) ON DELETE SET NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      last_login TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS onboarding_forms (
+      id SERIAL PRIMARY KEY,
+      user_ref INTEGER UNIQUE NOT NULL REFERENCES applicant_users(id) ON DELETE CASCADE,
+      full_name TEXT NOT NULL, dob DATE NOT NULL, country TEXT NOT NULL, city TEXT NOT NULL, address TEXT NOT NULL,
+      mobile TEXT NOT NULL, whatsapp TEXT NOT NULL, telegram TEXT NOT NULL, email TEXT NOT NULL,
+      payment_method TEXT NOT NULL, reference_info TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      reviewed_at TIMESTAMPTZ
     );`);
   await pool.query(
     `INSERT INTO admins (username, password_hash) VALUES ($1, $2)
@@ -73,6 +95,7 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ah = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -112,8 +135,9 @@ app.post('/api/apply', applyLimit, ah(async (req, res) => {
 // ---------- Admin ----------
 const cookieOpts = { httpOnly: true, sameSite: 'strict', secure: PROD, maxAge: 2 * 60 * 60 * 1000 };
 const auth = (req, res, next) => {
-  try { req.admin = jwt.verify(req.cookies.token, JWT_SECRET); next(); }
-  catch { res.status(401).json({ error: 'Unauthorized' }); }
+  try { req.admin = jwt.verify(req.cookies.token, JWT_SECRET); if (req.admin.role !== 'admin') throw new Error('role'); }
+  catch { return res.status(401).json({ error: 'Unauthorized' }); }
+  next();
 };
 
 app.post('/api/admin/login', loginLimit, ah(async (req, res) => {
@@ -121,7 +145,7 @@ app.post('/api/admin/login', loginLimit, ah(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM admins WHERE username = $1', [u]);
   const row = rows[0];
   if (!row || !(await bcrypt.compare(p, row.password_hash))) return res.status(401).json({ error: 'Invalid username or password.' });
-  res.cookie('token', jwt.sign({ id: row.id, u: row.username }, JWT_SECRET, { expiresIn: '2h' }), cookieOpts);
+  res.cookie('token', jwt.sign({ id: row.id, u: row.username, role: 'admin' }, JWT_SECRET, { expiresIn: '2h' }), cookieOpts);
   res.json({ ok: true });
 }));
 app.post('/api/admin/logout', (req, res) => { res.clearCookie('token', cookieOpts); res.json({ ok: true }); });
@@ -162,6 +186,152 @@ app.get('/api/admin/export', auth, ah(async (req, res) => {
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="applications.csv"' });
   res.send('\ufeff' + [head.map(esc).join(','), ...lines].join('\r\n'));
 }));
+
+// ---------- Applicant onboarding ----------
+const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', IDCH = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const rnd = (n, a = ALPHA) => Array.from({ length: n }, () => a[crypto.randomInt(a.length)]).join('');
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
+const CRYPTO = ['USDT TRC20', 'USDT ERC20', 'USDT BEP20', 'Other Cryptocurrency'];
+const PAYMENTS = {
+  Bangladesh: ['bKash', 'Nagad', 'Rocket', 'Bank Transfer', ...CRYPTO],
+  India: ['UPI', 'Paytm', 'Bank Transfer', ...CRYPTO],
+  Pakistan: ['JazzCash', 'Easypaisa', 'Bank Transfer', ...CRYPTO],
+  default: ['Bank Transfer', ...CRYPTO]
+};
+const userLoginLimit = limiter(15, 10, 'Too many login attempts. Please try again in 15 minutes.');
+const idParam = req => parseInt(req.params.id, 10);
+
+const userAuth = ah(async (req, res, next) => {
+  let t;
+  try { t = jwt.verify(req.cookies.utoken, JWT_SECRET); } catch { return res.status(401).json({ error: 'Unauthorized' }); }
+  if (t.role !== 'user') return res.status(401).json({ error: 'Unauthorized' });
+  const { rows } = await pool.query('SELECT id, user_id, name FROM applicant_users WHERE id = $1 AND active', [t.id]);
+  if (!rows[0]) return res.status(401).json({ error: 'Unauthorized' });
+  req.user = rows[0];
+  next();
+});
+
+// --- Applicant (user) side ---
+app.post('/api/user/login', userLoginLimit, ah(async (req, res) => {
+  const uid = clean(req.body?.userId, 30).toUpperCase(), pw = String(req.body?.password ?? '').slice(0, 100);
+  const { rows } = await pool.query('SELECT * FROM applicant_users WHERE user_id = $1', [uid]);
+  const u = rows[0];
+  const ok = await bcrypt.compare(pw, u ? u.password_hash : DUMMY_HASH);
+  if (!u || !ok || !u.active) return res.status(401).json({ error: 'Invalid User ID or password.' });
+  await pool.query('UPDATE applicant_users SET last_login = NOW() WHERE id = $1', [u.id]);
+  res.cookie('utoken', jwt.sign({ id: u.id, role: 'user' }, JWT_SECRET, { expiresIn: '2h' }), cookieOpts);
+  res.json({ ok: true });
+}));
+app.post('/api/user/logout', (req, res) => { res.clearCookie('utoken', cookieOpts); res.json({ ok: true }); });
+
+const FORM_SQL = `SELECT full_name AS "fullName", dob, country, city, address, mobile, whatsapp, telegram, email,
+  payment_method AS payment, reference_info AS reference, status FROM onboarding_forms WHERE user_ref = $1`;
+app.get('/api/user/me', userAuth, ah(async (req, res) => {
+  const f = await pool.query(FORM_SQL, [req.user.id]);
+  res.json({ userId: req.user.user_id, name: req.user.name, form: f.rows[0] || null, payments: PAYMENTS });
+}));
+
+app.put('/api/user/form', userAuth, ah(async (req, res) => {
+  const b = req.body || {}, digits = s => s.replace(/\D/g, '');
+  const f = {
+    fullName: clean(b.fullName, 100), dob: clean(b.dob, 10), country: clean(b.country, 80), city: clean(b.city, 80),
+    address: clean(b.address, 250), mobile: clean(b.mobile, 30), whatsapp: clean(b.whatsapp, 30),
+    telegram: clean(b.telegram, 40).replace(/^@/, ''), email: clean(b.email, 150).toLowerCase(), payment: clean(b.payment, 40),
+    reference: String(b.reference ?? '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim().slice(0, 500)
+  };
+  const errors = {};
+  if (f.fullName.length < 2) errors.fullName = 'Enter your full name.';
+  const okDob = /^\d{4}-\d{2}-\d{2}$/.test(f.dob) && !isNaN(new Date(f.dob)) && new Date(f.dob).toISOString().slice(0, 10) === f.dob && f.dob >= '1900-01-01';
+  const t = new Date(), min = new Date(Date.UTC(t.getUTCFullYear() - 18, t.getUTCMonth(), t.getUTCDate())).toISOString().slice(0, 10);
+  if (!okDob) errors.dob = 'Enter a valid date of birth.'; else if (f.dob > min) errors.dob = 'You must be at least 18 years old.';
+  if (!f.country) errors.country = 'Select your country.';
+  if (f.city.length < 2) errors.city = 'Enter your city.';
+  if (f.address.length < 5) errors.address = 'Enter your full address.';
+  for (const k of ['mobile', 'whatsapp']) if (!/^\+?[\d\s\-()]+$/.test(f[k]) || digits(f[k]).length < 7 || digits(f[k]).length > 15) errors[k] = 'Enter a valid number with country code.';
+  if (!/^[A-Za-z0-9_]{5,32}$/.test(f.telegram)) errors.telegram = 'Telegram username must be 5–32 letters, numbers or underscores.';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email)) errors.email = 'Enter a valid email address.';
+  if (!(Object.hasOwn(PAYMENTS, f.country) ? PAYMENTS[f.country] : PAYMENTS.default).includes(f.payment)) errors.payment = 'Select a payment method from the list.';
+  if (b.consent !== true) errors.consent = 'You must confirm the information and accept the Privacy Policy.';
+  if (Object.keys(errors).length) return res.status(400).json({ error: 'Please fix the highlighted fields.', errors });
+  const cur = await pool.query('SELECT status FROM onboarding_forms WHERE user_ref = $1', [req.user.id]);
+  if (cur.rows[0]?.status === 'approved') return res.status(403).json({ error: 'Your application is approved and can no longer be edited.' });
+  await pool.query(
+    `INSERT INTO onboarding_forms (user_ref, full_name, dob, country, city, address, mobile, whatsapp, telegram, email, payment_method, reference_info)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     ON CONFLICT (user_ref) DO UPDATE SET full_name=EXCLUDED.full_name, dob=EXCLUDED.dob, country=EXCLUDED.country, city=EXCLUDED.city,
+       address=EXCLUDED.address, mobile=EXCLUDED.mobile, whatsapp=EXCLUDED.whatsapp, telegram=EXCLUDED.telegram, email=EXCLUDED.email,
+       payment_method=EXCLUDED.payment_method, reference_info=EXCLUDED.reference_info, status='pending', reviewed_at=NULL, submitted_at=NOW()`,
+    [req.user.id, f.fullName, f.dob, f.country, f.city, f.address, f.mobile, f.whatsapp, f.telegram, f.email, f.payment, f.reference]);
+  res.json({ ok: true, status: 'pending' });
+}));
+
+// --- Admin side: credentials ---
+app.post('/api/admin/users', auth, ah(async (req, res) => {
+  const appId = parseInt(req.body?.application_id, 10) || null;
+  let name = clean(req.body?.name, 100), telegram = null;
+  if (appId) {
+    const a = await pool.query('SELECT name, telegram FROM applications WHERE id = $1', [appId]);
+    if (!a.rows[0]) return res.status(400).json({ error: 'Application not found.' });
+    name = name || a.rows[0].name; telegram = a.rows[0].telegram;
+  }
+  if (!name) return res.status(400).json({ error: 'Enter a name or choose an application.' });
+  const password = rnd(12), hash = await bcrypt.hash(password, 10);
+  for (let i = 0; i < 5; i++) {
+    const userId = 'BCW-' + rnd(6, IDCH);
+    try {
+      const r = await pool.query('INSERT INTO applicant_users (user_id, password_hash, name, application_id) VALUES ($1,$2,$3,$4) RETURNING id',
+        [userId, hash, name, appId]);
+      return res.status(201).json({ id: r.rows[0].id, userId, password, name, telegram });
+    } catch (e) { if (e.code !== '23505') throw e; }
+  }
+  throw new Error('Could not generate a unique User ID');
+}));
+app.get('/api/admin/users', auth, ah(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.user_id, u.name, u.active, u.last_login, u.created_at, a.email, a.telegram, f.status
+     FROM applicant_users u LEFT JOIN applications a ON a.id = u.application_id
+     LEFT JOIN onboarding_forms f ON f.user_ref = u.id ORDER BY u.id DESC`);
+  res.json({ rows });
+}));
+app.post('/api/admin/users/:id/reset', auth, ah(async (req, res) => {
+  const password = rnd(12);
+  const r = await pool.query(
+    `UPDATE applicant_users SET password_hash = $1 WHERE id = $2
+     RETURNING user_id AS "userId", name, (SELECT telegram FROM applications WHERE id = application_id) AS telegram`,
+    [await bcrypt.hash(password, 10), idParam(req)]);
+  r.rows[0] ? res.json({ ...r.rows[0], password }) : res.status(404).json({ error: 'Not found' });
+}));
+app.patch('/api/admin/users/:id', auth, ah(async (req, res) => {
+  if (typeof req.body?.active !== 'boolean') return res.status(400).json({ error: 'Invalid request' });
+  const r = await pool.query('UPDATE applicant_users SET active = $1 WHERE id = $2', [req.body.active, idParam(req)]);
+  r.rowCount ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' });
+}));
+app.delete('/api/admin/users/:id', auth, ah(async (req, res) => {
+  const r = await pool.query('DELETE FROM applicant_users WHERE id = $1', [idParam(req)]);
+  r.rowCount ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' });
+}));
+
+// --- Admin side: submitted forms ---
+app.get('/api/admin/forms', auth, ah(async (req, res) => {
+  const q = clean(req.query.q, 100), st = clean(req.query.status, 20), w = [], a = [];
+  if (q) {
+    a.push(`%${q.replace(/[\\%_]/g, '\\$&')}%`);
+    w.push(`(f.full_name ILIKE $1 OR f.email ILIKE $1 OR f.mobile ILIKE $1 OR f.whatsapp ILIKE $1 OR f.telegram ILIKE $1 OR f.country ILIKE $1 OR f.city ILIKE $1 OR u.user_id ILIKE $1)`);
+  }
+  if (['pending', 'approved', 'rejected'].includes(st)) { a.push(st); w.push(`f.status = $${a.length}`); }
+  const { rows } = await pool.query(
+    `SELECT f.*, u.user_id FROM onboarding_forms f JOIN applicant_users u ON u.id = f.user_ref
+     ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY f.id DESC`, a);
+  res.json({ rows });
+}));
+app.patch('/api/admin/forms/:id', auth, ah(async (req, res) => {
+  const st = req.body?.status;
+  if (!['approved', 'rejected', 'pending'].includes(st)) return res.status(400).json({ error: 'Invalid status' });
+  const r = await pool.query('UPDATE onboarding_forms SET status = $1, reviewed_at = NOW() WHERE id = $2', [st, idParam(req)]);
+  r.rowCount ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' });
+}));
+
+app.get('/portal', (req, res) => res.sendFile(path.join(__dirname, 'public', 'portal.html')));
 
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
