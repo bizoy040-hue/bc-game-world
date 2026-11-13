@@ -43,7 +43,7 @@ async function loadForms() {
 function viewForm(r) {
   const dl = document.createElement('dl');
   [['User ID', r.user_id], ['Full name', r.full_name], ['Date of birth', r.dob], ['Country', r.country], ['City', r.city], ['Address', r.address],
-   ['Mobile', r.mobile], ['WhatsApp', r.whatsapp], ['Telegram', '@' + r.telegram], ['Email', r.email], ['Payment method', r.payment_method],
+   ['Mobile', r.mobile], ['WhatsApp', r.whatsapp], ['Telegram', '@' + r.telegram], ['Email', r.email], ['Payment method', r.payment_method], ['Payment numbers', (r.payment_numbers || []).map(x => `${x.method}: ${x.number}`).join(', ') || '—'], ['Reference name', r.reference_name || '—'],
    ['Reference', r.reference_info || '—'], ['Status', r.status], ['Submitted', fmt(r.submitted_at)], ['Reviewed', fmt(r.reviewed_at)]]
     .forEach(([k, v]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; dl.append(dt, dd); });
   $('#viewBody').replaceChildren(dl); $('#viewDlg').showModal();

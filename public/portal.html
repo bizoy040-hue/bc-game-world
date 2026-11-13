@@ -38,6 +38,13 @@
       <label>Telegram Username<input name="telegram" placeholder="@username" maxlength="33"><small class="err"></small></label>
       <label>Email<input name="email" type="email" autocomplete="email" maxlength="150"><small class="err"></small></label>
       <label>Preferred Payment Method<select name="payment" id="payment"></select><small class="err"></small></label>
+      <fieldset class="nums" id="numBox" hidden>
+        <legend id="numLegend">Numbers</legend>
+        <div id="numList"></div>
+        <button class="btn btn-ghost" id="numAdd" type="button">+ Add another number</button>
+        <small class="err" id="numErr"></small>
+      </fieldset>
+      <label>Reference Name (optional)<input name="referenceName" maxlength="100"><small class="err"></small></label>
       <label>Reference Information (optional)<textarea name="reference" rows="3" maxlength="500"></textarea><small class="err"></small></label>
       <label class="check"><input type="checkbox" name="consent"><span>I confirm this information is accurate and agree to the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
       <small class="err" id="consentErr"></small>

@@ -81,3 +81,12 @@ dialog textarea{resize:none;margin-top:.8rem;font-size:.85rem}
 .msg.info{background:#00a8ff1f;border:1px solid var(--cyan);color:#cfe3f3}
 .who{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.4rem}
 .card.wide{max-width:640px}
+
+/* ---- Payment numbers ---- */
+[hidden]{display:none!important}
+.nums{border:1px solid var(--line);border-radius:12px;padding:.8rem;margin:0 0 .9rem;min-width:0}
+.nums legend{padding:0 .4rem;font-size:.88rem;color:var(--muted)}
+.numrow{display:flex;gap:.5rem;margin-bottom:.5rem}
+.numrow input{margin:0;flex:1;min-width:0}
+.numrow .btn{padding:.5rem .85rem;flex:0 0 auto}
+.nums>.btn{width:100%}
