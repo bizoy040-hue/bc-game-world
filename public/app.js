@@ -72,6 +72,7 @@ const setMode = on => {
   $('#landing').hidden = on; $('#admin').hidden = !on;
   authBtn.textContent = on ? 'Logout' : 'Login';
   if (on) loadApps();
+  document.dispatchEvent(new CustomEvent('admin-mode', { detail: on }));
 };
 authBtn.addEventListener('click', async () => {
   if (loggedIn) { await api('/api/admin/logout', { method: 'POST' }).catch(() => {}); setMode(false); }

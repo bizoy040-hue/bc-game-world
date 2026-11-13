@@ -10,7 +10,7 @@
 <body>
 <header class="top">
   <a class="logo" href="/">BC GAME <span>WORLD</span></a>
-  <button class="btn btn-ghost" id="authBtn" type="button">Login</button>
+  <div class="nav"><a class="btn btn-ghost" href="/portal">Applicant Login</a><button class="btn btn-ghost" id="authBtn" type="button">Login</button></div>
 </header>
 
 <main id="landing">
@@ -43,6 +43,8 @@
 </main>
 
 <main id="admin" hidden>
+  <nav class="tabs"><button class="tab on" data-tab="Apps" type="button">Applications</button><button class="tab" data-tab="Forms" type="button">Onboarding Forms</button><button class="tab" data-tab="Users" type="button">Credentials</button></nav>
+  <div id="tabApps">
   <div class="stats">
     <div class="stat"><b id="sTotal">0</b><span>Total Applications</span></div>
     <div class="stat"><b id="sToday">0</b><span>Today's Applications</span></div>
@@ -57,6 +59,30 @@
     <tbody id="rows"></tbody>
   </table></div>
   <p id="empty" class="note" hidden>No applications found.</p>
+  </div>
+  <div id="tabForms" hidden>
+    <div class="tools">
+      <input id="fq" type="search" placeholder="Search name, email, phone, User ID…">
+      <select id="fStatus"><option value="">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+    </div>
+    <div class="wrap"><table>
+      <thead><tr><th>ID</th><th>Name</th><th>User ID</th><th>Country</th><th>Mobile</th><th>Payment</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+      <tbody id="fRows"></tbody>
+    </table></div>
+    <p id="fEmpty" class="note" hidden>No submitted forms found.</p>
+  </div>
+  <div id="tabUsers" hidden>
+    <div class="gen">
+      <select id="uApp"><option value="">No linked application</option></select>
+      <input id="uName" placeholder="Name (optional if application chosen)" maxlength="100">
+      <button class="btn btn-main" id="uGen" type="button">Generate credentials</button>
+    </div>
+    <div class="wrap"><table>
+      <thead><tr><th>User ID</th><th>Name</th><th>Telegram</th><th>Form</th><th>Access</th><th>Last login</th><th></th></tr></thead>
+      <tbody id="uRows"></tbody>
+    </table></div>
+    <p id="uEmpty" class="note" hidden>No credentials created yet.</p>
+  </div>
 </main>
 
 <footer>© BC GAME WORLD · An independent agent-recruitment site. Not operated by, or affiliated with, BC.Game unless stated otherwise. · <a href="/privacy">Privacy Policy</a></footer>
@@ -69,8 +95,17 @@
   <div class="row"><button class="btn btn-ghost" type="button" id="loginCancel">Cancel</button><button class="btn btn-main" type="submit">Login</button></div>
 </form></dialog>
 
+<dialog id="credDlg">
+  <h3>Applicant credentials</h3>
+  <p class="note">The password is shown only now and is stored hashed. Send it to the applicant on Telegram.</p>
+  <textarea id="credMsg" rows="5" readonly></textarea>
+  <div class="row wrap"><button class="btn btn-ghost" id="credCopy" type="button">Copy message</button><a class="btn btn-main" id="credTg" target="_blank" rel="noopener">Send via Telegram</a></div>
+  <div class="row"><button class="btn btn-ghost" id="credClose" type="button">Close</button></div>
+</dialog>
+
 <dialog id="viewDlg"><div id="viewBody"></div><div class="row"><button class="btn btn-ghost" id="viewClose" type="button">Close</button></div></dialog>
 
 <script src="/app.js"></script>
+<script src="/admin-users.js"></script>
 </body>
 </html>
